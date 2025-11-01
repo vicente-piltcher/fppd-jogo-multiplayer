@@ -162,51 +162,62 @@ func main() {
 
 	    for range ticker.C {
 
-	        // 1. Busca lista do servidor
 	        newPlayers := listAllPlayers(client)
 
-	        // 2. Cria mapa para marcar quem está ativo no servidor
+	        // Marca quem continua no jogo
 	        activeIDs := make(map[int]bool)
 
 	        for _, p := range newPlayers {
 
-	            activeIDs[p.ID] = true // marca como ativo
-
+	            // Não atualiza o jogador local
 	            if p.ID == player.ID {
-	                continue // não atualiza você mesmo
+	                continue
 	            }
 
-	            oldX, oldY := localP.PosX, localP.PosY
-				localP.PosX = p.PosX
-				localP.PosY = p.PosY
-							
-				// Só redesenha se a posição mudou
-				if oldX != p.PosX || oldY != p.PosY {
-				    removePlayerDoMapa(jogo, oldX, oldY)
-				    renderizaPlayerOnline(jogo, localP)
-				} else {
-	                // 4. Se for novo → adiciona no mapa e renderiza
-	                np := p // cópia segura
-	                playersOnline[p.ID] = &np
+	            activeIDs[p.ID] = true
+
+	            // Player já existe no mapa → apenas atualiza movimento
+	            if localP, exists := playersOnline[p.ID]; exists {
+
+	                // Se a posição mudou, atualiza no mapa
+	                if localP.PosX != p.PosX || localP.PosY != p.PosY {
+
+	                    // remove posição antiga
+	                    removePlayerDoMapa(&jogo, localP)
+
+	                    // atualiza struct
+	                    localP.PosX = p.PosX
+	                    localP.PosY = p.PosY
+
+	                    // desenha nova posição
+	                    renderizaPlayerOnline(&jogo, localP)
+	                }
+
+	            } else {
+	                // Player é novo → adicionar
+	                np := p // CÓPIA segura (evita pointer bug)
+	                playersOnline[np.ID] = &np
 
 	                log.Println("🎉 Novo player entrou:", np.Name)
+
 	                renderizaPlayerOnline(&jogo, &np)
 	            }
 	        }
 
-	        // 5. Remove players que saíram (não estão mais no servidor)
-	        for id := range playersOnline {
+	        // Remover players que saíram
+	        for id, pl := range playersOnline {
 	            if !activeIDs[id] {
-	                log.Println("👋 Player saiu:", playersOnline[id].Name)
-	                removePlayerDoMapa(&jogo, playersOnline[id]) // você pode implementar isso ou eu faço
+	                log.Println("👋 Player saiu:", pl.Name)
+	                removePlayerDoMapa(&jogo, pl)
 	                delete(playersOnline, id)
 	            }
 	        }
 
-	        // 6. Redesenha sem flood
+	        // redesenha tela
 	        desenharSeguro()
 	    }
 	}()
+
 
 
 	//1° Goroutine
