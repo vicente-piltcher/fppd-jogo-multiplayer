@@ -130,7 +130,7 @@ func main() {
 	player := criaPlayer(client, Player{
     	PosX: 10,
     	PosY: 10,
-    	Name: "Michele",
+    	Name: "Vicente",
 	})
 
 	// Inicializa a interface (termbox)
@@ -154,54 +154,56 @@ func main() {
 
 	//Area que o nosso grupo produziu
 
-	// playersOnline deve ser map[int]*Player
 	var playersOnline = make(map[int]*Player)
 
 	go func() {
 	    ticker := time.NewTicker(200 * time.Millisecond)
 	    defer ticker.Stop()
-
-	    var oldPlayers []Player
-
+	
 	    for range ticker.C {
-	        // pega lista mais recente do server
+		
+	        // 1. Busca lista do servidor
 	        newPlayers := listAllPlayers(client)
-
-	        // cria mapa dos antigos para checagem rápida
-	        oldMap := make(map[int]bool)
-	        for _, p := range oldPlayers {
-	            oldMap[p.ID] = true
-	        }
-
-	        // processa a lista nova
+		
+	        // 2. Cria mapa para marcar quem está ativo no servidor
+	        activeIDs := make(map[int]bool)
+		
 	        for _, p := range newPlayers {
-
+			
+	            activeIDs[p.ID] = true // marca como ativo
+			
 	            if p.ID == player.ID {
-	                continue // não atualizar você mesmo
+	                continue // não atualiza você mesmo
 	            }
-
-	            // Se o player já existe → atualiza posição
+			
 	            if localP, exists := playersOnline[p.ID]; exists {
+	                // 3. Se já existe, só atualiza pos
 	                localP.PosX = p.PosX
 	                localP.PosY = p.PosY
-	                continue
+	            } else {
+	                // 4. Se for novo → adiciona no mapa e renderiza
+	                np := p // cópia segura
+	                playersOnline[p.ID] = &np
+				
+	                log.Println("🎉 Novo player entrou:", np.Name)
+	                renderizaPlayerOnline(&jogo, &np)
 	            }
-
-	            // Se não existia → este player é NOVO ✅
-	            np := p // cópia segura
-	            playersOnline[p.ID] = &np
-
-	            log.Println("🎉 Novo player entrou:", np.Name)
-
-	            renderizaPlayerOnline(&jogo, &np)
 	        }
-
-	        oldPlayers = newPlayers
-
-	        // redesenha UI sem flood
+		
+	        // 5. Remove players que saíram (não estão mais no servidor)
+	        for id := range playersOnline {
+	            if !activeIDs[id] {
+	                log.Println("👋 Player saiu:", playersOnline[id].Name)
+	                removePlayerDoMapa(&jogo, playersOnline[id]) // você pode implementar isso ou eu faço
+	                delete(playersOnline, id)
+	            }
+	        }
+		
+	        // 6. Redesenha sem flood
 	        desenharSeguro()
 	    }
 	}()
+
 
 	//1° Goroutine
 	//Insere concorrentemente uma Flor no mapa a cada 5 segundos (funcionalidade independente)

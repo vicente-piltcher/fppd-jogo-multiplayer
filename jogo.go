@@ -319,5 +319,13 @@ func renderizaPlayerOnline(jogo *Jogo, player *Player) bool {
 	return false
 }
 
+func removePlayerDoMapa(jogo *Jogo, p *Player) {
+    if p.PosY >= 0 && p.PosY < len(jogo.Mapa) &&
+       p.PosX >= 0 && p.PosX < len(jogo.Mapa[p.PosY]) {
+        jogo.Mapa[p.PosY][p.PosX] = Vazio
+    }
+}
+
+
 
 
