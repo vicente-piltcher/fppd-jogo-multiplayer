@@ -306,17 +306,18 @@ func jardineiroConsumir(jogo *Jogo, cx, cy int) {
 	}
 }
 
-func renderizaPlayerOnline(jogo *Jogo, player *Player) bool {
-	if len(jogo.Mapa) == 0 {
-		return false
-	}
+func renderizaPlayerOnline(jogo *Jogo, player *Player) {
+    // Limpa posição anterior se válida
+    for y := range jogo.Mapa {
+        for x := range jogo.Mapa[y] {
+            if jogo.Mapa[y][x] == Personagem && (x != player.PosX || y != player.PosY) {
+                jogo.Mapa[y][x] = Vazio
+            }
+        }
+    }
 
-	if (jogo.Mapa[player.PosY][player.PosX] == Vazio) {
-		jogo.Mapa[player.PosY][player.PosX] = Personagem
-		return true	
-	}
-
-	return false
+    // Desenha nova posição
+    jogo.Mapa[player.PosY][player.PosX] = Personagem
 }
 
 func removePlayerDoMapa(jogo *Jogo, p *Player) {

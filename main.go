@@ -159,37 +159,41 @@ func main() {
 	go func() {
 	    ticker := time.NewTicker(200 * time.Millisecond)
 	    defer ticker.Stop()
-	
+
 	    for range ticker.C {
-		
+
 	        // 1. Busca lista do servidor
 	        newPlayers := listAllPlayers(client)
-		
+
 	        // 2. Cria mapa para marcar quem está ativo no servidor
 	        activeIDs := make(map[int]bool)
-		
+
 	        for _, p := range newPlayers {
-			
+
 	            activeIDs[p.ID] = true // marca como ativo
-			
+
 	            if p.ID == player.ID {
 	                continue // não atualiza você mesmo
 	            }
-			
-	            if localP, exists := playersOnline[p.ID]; exists {
-	                // 3. Se já existe, só atualiza pos
-	                localP.PosX = p.PosX
-	                localP.PosY = p.PosY
-	            } else {
+
+	            oldX, oldY := localP.PosX, localP.PosY
+				localP.PosX = p.PosX
+				localP.PosY = p.PosY
+							
+				// Só redesenha se a posição mudou
+				if oldX != p.PosX || oldY != p.PosY {
+				    removePlayerDoMapa(jogo, oldX, oldY)
+				    renderizaPlayerOnline(jogo, localP)
+				} else {
 	                // 4. Se for novo → adiciona no mapa e renderiza
 	                np := p // cópia segura
 	                playersOnline[p.ID] = &np
-				
+
 	                log.Println("🎉 Novo player entrou:", np.Name)
 	                renderizaPlayerOnline(&jogo, &np)
 	            }
 	        }
-		
+
 	        // 5. Remove players que saíram (não estão mais no servidor)
 	        for id := range playersOnline {
 	            if !activeIDs[id] {
@@ -198,7 +202,7 @@ func main() {
 	                delete(playersOnline, id)
 	            }
 	        }
-		
+
 	        // 6. Redesenha sem flood
 	        desenharSeguro()
 	    }
