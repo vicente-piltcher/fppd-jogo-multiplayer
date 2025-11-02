@@ -11,6 +11,7 @@ import (
 	"log"
 	"os/exec"
 	"io"
+	"sync"
 )
 
 type Player struct {
@@ -24,21 +25,42 @@ type CreatePlayerRequest struct {
     Name  string
     PosX  int
     PosY  int
+	SequenceNumber uint64
 }
 
 type GetPlayerRequest struct {
     ID int
+	SequenceNumber uint64
 }
 
 type PostPlayerPositionRequest struct {
 	ID	 int
 	PosX int
 	PosY int
+	SequenceNumber uint64
+}
+
+type RenderEvent struct {
+    Player *Player
+}
+
+type RemoveEvent struct {
+    Player *Player
 }
 
 var redrawCh chan struct{}
 
 var oldPlayers []Player
+
+var jogoMu sync.Mutex
+var sendPosMu sync.Mutex
+var createPlayerMu sync.Mutex
+var getPlayerMu sync.Mutex
+var listPlayersMu sync.Mutex
+
+var sequenceNumber uint64
+var seqMu sync.Mutex
+
 
 func desenharSeguro() {
 	select {
@@ -48,31 +70,63 @@ func desenharSeguro() {
 }
 
 func sendPlayerPositionToServer(client *rpc.Client, player Player) bool{
-	sendPlayerPosReq := PostPlayerPositionRequest{ID: player.ID, PosX: player.PosX, PosY: player.PosY}
-	err := client.Call("PlayerService.UpdatePlayerPosition", &sendPlayerPosReq, nil)
-	if err != nil {
-		log.Fatal("Erro ao atualizar posicao do jogador:", err)
-		return false;
-	}
+	sendPosMu.Lock()
+    defer sendPosMu.Unlock()
 
-	return true
+	seqMu.Lock()
+	sequenceNumber++
+	seqMu.Unlock()
+
+	sendPlayerPosReq := PostPlayerPositionRequest{ID: player.ID, PosX: player.PosX, PosY: player.PosY, SequenceNumber: sequenceNumber}
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		err := client.Call("PlayerService.UpdatePlayerPosition", &sendPlayerPosReq, nil)
+
+		if err == nil {
+			return true;
+		}
+
+		log.Printf("[WARN] Falha ao enviar posicao (seq=%d), tentativa %d/3: %v", sendPlayerPosReq.SequenceNumber, attempt, err)
+	}
+	
+	log.Printf("[ERRO] Não foi possível enviar posição (seq=%d) após 3 tentativas", sendPlayerPosReq.SequenceNumber)
+
+	sequenceNumber--
+
+	return false
 }
 
 func criaPlayer(client *rpc.Client, player Player) Player {
-	createReq := CreatePlayerRequest{PosX: player.PosX, PosY: player.PosY, Name: player.Name}
+	createPlayerMu.Lock()
+    defer createPlayerMu.Unlock()
+
+	seqMu.Lock()
+    sequenceNumber++
+    seq := sequenceNumber
+    seqMu.Unlock()
+
+	createReq := CreatePlayerRequest{PosX: player.PosX, PosY: player.PosY, Name: player.Name, SequenceNumber: seq}
     var newPlayer Player
-    err := client.Call("PlayerService.CreatePlayer", &createReq, &newPlayer)
-    if err != nil {
-        log.Fatal("Erro ao criar jogador:", err)
-    }
 
-	//Passar para main que chama
-    log.Println("Jogador criado:", newPlayer)
+	for attempt := 1; attempt <= 3; attempt++ {
+		err := client.Call("PlayerService.CreatePlayer", &createReq, &newPlayer)
 
-	return newPlayer
+		if err == nil {
+			log.Printf("Jogador criado (seq=%d): %+v\n", seq, newPlayer)
+            return newPlayer
+		}
+		
+		log.Printf("Falha ao criar jogador (seq=%d) tentativa %d/3 — %v",seq, attempt, err)
+	}
+
+	//Erro ao criar novo jogado --> retorna jogador vazio.
+	return Player{}
 }
 
 func GetPlayerById(client *rpc.Client, playerID int) Player{
+	getPlayerMu.Lock()
+    defer getPlayerMu.Unlock()
+
 	var fetched Player
     getReq := GetPlayerRequest{ID: playerID}
     err := client.Call("PlayerService.GetPlayer", &getReq, &fetched)
@@ -88,13 +142,23 @@ func GetPlayerById(client *rpc.Client, playerID int) Player{
 
 
 func listAllPlayers(client *rpc.Client) []Player{
-	var allPlayers []Player
-    err := client.Call("PlayerService.ListPlayers", &struct{}{}, &allPlayers)
-    if err != nil {
-        log.Fatal("Erro ao listar jogadores:", err)
-    }
+	listPlayersMu.Lock()
+    defer listPlayersMu.Unlock()
 
-	return allPlayers
+	var allPlayers []Player
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		err := client.Call("PlayerService.ListPlayers", &struct{}{}, &allPlayers)
+
+		if err == nil {
+			return allPlayers
+		}
+
+		log.Printf("Falha ao listar jogadores, tentativa %d/3 — %v", attempt, err)
+	}
+
+	// Nao foi possivel listar os players
+	return nil
 }
 
 
@@ -156,6 +220,9 @@ func main() {
 
 	// Goroutine que faz a busca pela  lista de jogadores no servidor e atualiza a posição dos players online no mapa
 	var playersOnline = make(map[int]*Player)
+	var renderCh = make(chan RenderEvent, 32)
+	var removeCh = make(chan RemoveEvent, 32)
+
 	go func() {
 	    ticker := time.NewTicker(200 * time.Millisecond)
 	    defer ticker.Stop()
@@ -183,14 +250,14 @@ func main() {
 	                if localP.PosX != p.PosX || localP.PosY != p.PosY {
 
 	                    // remove posição antiga
-	                    removePlayerDoMapa(&jogo, localP)
+	                    removeCh <- RemoveEvent{Player: localP}
 
 	                    // atualiza struct
 	                    localP.PosX = p.PosX
 	                    localP.PosY = p.PosY
 
 	                    // desenha nova posição
-	                    renderizaPlayerOnline(&jogo, localP)
+	                    renderCh <- RenderEvent{Player: localP}
 	                }
 
 	            } else {
@@ -200,23 +267,39 @@ func main() {
 
 	                log.Println("Novo player entrou:", np.Name)
 
-	                renderizaPlayerOnline(&jogo, &np)
+	                renderCh <- RenderEvent{Player: &np}
 	            }
 	        }
 
 	        // Remover players que saíram
 	        for id, pl := range playersOnline {
-	            if !activeIDs[id] {
-	                log.Println("Player saiu:", pl.Name)
-	                removePlayerDoMapa(&jogo, pl)
-	                delete(playersOnline, id)
-	            }
-	        }
-
-	        // redesenha tela
-	        desenharSeguro()
+            	if !activeIDs[id] {
+            	    log.Println("Player saiu:", pl.Name)
+            	    removeCh <- RemoveEvent{Player: pl}
+            	    delete(playersOnline, id)
+            	}
+        	}
 	    }
 	}()
+
+	//Goroutine responsável pelos canais de renderização e exclusão de players do mapa
+	go func() {
+    	for {
+    	    select {
+    	    case e := <-renderCh:
+    	        jogoMu.Lock()
+    	        renderizaPlayerOnline(&jogo, e.Player)
+    	        jogoMu.Unlock()
+
+    	    case e := <-removeCh:
+    	        jogoMu.Lock()
+    	        removePlayerDoMapa(&jogo, e.Player)
+    	        jogoMu.Unlock()
+    	    }
+    	    desenharSeguro()
+    	}
+	}()
+
 
 
 
