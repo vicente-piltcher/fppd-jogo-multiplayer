@@ -184,7 +184,7 @@ func main() {
     }
 	
 	// conecta no servidor
-    serverAddr := "localhost:8932" // Ex: "localhost:1234"
+    serverAddr := "25.47.251.143:8932" // Ex: "localhost:1234"
 
     client, err := rpc.Dial("tcp", serverAddr)
     if err != nil {
@@ -220,8 +220,6 @@ func main() {
 
 	// Goroutine que faz a busca pela  lista de jogadores no servidor e atualiza a posição dos players online no mapa
 	var playersOnline = make(map[int]*Player)
-	var renderCh = make(chan RenderEvent, 32)
-	var removeCh = make(chan RemoveEvent, 32)
 
 	go func() {
 	    ticker := time.NewTicker(200 * time.Millisecond)
@@ -250,14 +248,13 @@ func main() {
 	                if localP.PosX != p.PosX || localP.PosY != p.PosY {
 
 	                    // remove posição antiga
-	                    removeCh <- RemoveEvent{Player: localP}
-
+    	        		removePlayerDoMapa(&jogo, localP)
 	                    // atualiza struct
 	                    localP.PosX = p.PosX
 	                    localP.PosY = p.PosY
 
 	                    // desenha nova posição
-	                    renderCh <- RenderEvent{Player: localP}
+	                    renderizaPlayerOnline(&jogo, localP)
 	                }
 
 	            } else {
@@ -267,7 +264,7 @@ func main() {
 
 	                log.Println("Novo player entrou:", np.Name)
 
-	                renderCh <- RenderEvent{Player: &np}
+	                renderizaPlayerOnline(&jogo, &np)
 	            }
 	        }
 
@@ -275,33 +272,12 @@ func main() {
 	        for id, pl := range playersOnline {
             	if !activeIDs[id] {
             	    log.Println("Player saiu:", pl.Name)
-            	    removeCh <- RemoveEvent{Player: pl}
+            	    removePlayerDoMapa(&jogo, pl)
             	    delete(playersOnline, id)
             	}
         	}
 	    }
 	}()
-
-	//Goroutine responsável pelos canais de renderização e exclusão de players do mapa
-	go func() {
-    	for {
-    	    select {
-    	    case e := <-renderCh:
-    	        jogoMu.Lock()
-    	        renderizaPlayerOnline(&jogo, e.Player)
-    	        jogoMu.Unlock()
-
-    	    case e := <-removeCh:
-    	        jogoMu.Lock()
-    	        removePlayerDoMapa(&jogo, e.Player)
-    	        jogoMu.Unlock()
-    	    }
-    	    desenharSeguro()
-    	}
-	}()
-
-
-
 
 	//1° Goroutine
 	//Insere concorrentemente uma Flor no mapa a cada 5 segundos (funcionalidade independente)
