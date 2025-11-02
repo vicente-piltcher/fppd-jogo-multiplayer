@@ -714,3 +714,11 @@
 2025/11/02 17:06:43 Falha ao listar jogadores, tentativa 3/3 — connection is shut down
 2025/11/02 17:06:54 Arquivo de log criado: jogo.log
 2025/11/02 17:06:54 Jogador criado (seq=1): {ID:1 Name:Vicente PosX:10 PosY:10}
+2025/11/02 17:13:36 Arquivo de log criado: jogo.log
+2025/11/02 17:13:36 Jogador criado (seq=1): {ID:1 Name:Vicente PosX:28 PosY:4}
+2025/11/02 17:15:12 Arquivo de log criado: jogo.log
+2025/11/02 17:15:12 Jogador criado (seq=1): {ID:2 Name:Vicente PosX:10 PosY:10}
+2025/11/02 17:15:12 Novo player entrou: Vicente
+2025/11/02 17:24:50 Arquivo de log criado: jogo.log
+2025/11/02 17:24:50 Jogador criado (seq=1): {ID:2 Name:Vicente PosX:10 PosY:10}
+2025/11/02 17:24:50 Novo player entrou: Vicente
