@@ -154,8 +154,8 @@ func main() {
 
 	//Area que o nosso grupo produziu
 
+	// Goroutine que faz a busca pela  lista de jogadores no servidor e atualiza a posição dos players online no mapa
 	var playersOnline = make(map[int]*Player)
-
 	go func() {
 	    ticker := time.NewTicker(200 * time.Millisecond)
 	    defer ticker.Stop()
@@ -198,7 +198,7 @@ func main() {
 	                np := p // CÓPIA segura (evita pointer bug)
 	                playersOnline[np.ID] = &np
 
-	                log.Println("🎉 Novo player entrou:", np.Name)
+	                log.Println("Novo player entrou:", np.Name)
 
 	                renderizaPlayerOnline(&jogo, &np)
 	            }
@@ -207,7 +207,7 @@ func main() {
 	        // Remover players que saíram
 	        for id, pl := range playersOnline {
 	            if !activeIDs[id] {
-	                log.Println("👋 Player saiu:", pl.Name)
+	                log.Println("Player saiu:", pl.Name)
 	                removePlayerDoMapa(&jogo, pl)
 	                delete(playersOnline, id)
 	            }
